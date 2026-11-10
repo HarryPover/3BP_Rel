@@ -9,3 +9,4 @@ __pycache__/
 *.npz
 !runs/ref_newton.npz
 scratch*.py
+check_run.py
