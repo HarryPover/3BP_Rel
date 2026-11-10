@@ -57,6 +57,45 @@ def collision_rel(p, m, behind, ahead):
     p_new[pair] = m[pair] * np.sinh(eta_new)
     return p_new
 
+def set_energy(p, m, K, kinetic):
+    """Scale p by one factor s so that sum(kinetic(s*p, m)) = K * sum(m).
+    kinetic comes from pick_physics(rel).
+    Looking for point of bisection between K(s) and target K * m"""
+
+    #guard for momenta being all 0:
+    if np.all(p == 0):
+        raise ValueError("all momenta are zero: no scale factor can give energy K")
+
+    target = K * np.sum(m)  #energy we want, in units where c=1
+
+    def excess(s):
+        return kinetic(s * p, m).sum() - target   #negative if s too small, positive if s too large
+    
+    lo = 0.0
+    hi = 1.0
+
+    #1. bracket: find lo and hi
+    while excess(hi) < 0:   #p too small, need to scale up
+        lo = hi
+        hi *= 2
+
+    #2. bisection: shrink bracket to answer
+    for _ in range(200):
+        mid = 0.5 * (lo + hi)
+        if excess(mid) < 0:
+            lo = mid
+        else:
+            hi = mid
+        if hi - lo < 1e-15 * hi:
+            break
+
+    s = 0.5 * (lo + hi)
+
+    return s * p
+
+
+    
+
 
 #initialise system
 def initialise(rng, m= None, m_range=(1.0, 10.0), x_range=(X_MIN, X_MIN + L), p_range=(-5.0, 5.0)):
@@ -154,7 +193,8 @@ def print_collisions(out, n_rows=20):
 
 
 
-def save_run(out, m, x0, p0, seed, labels_only=False, rel=False, name=None):
+
+def save_run(out, m, x0, p0, seed, labels_only=False, rel=False, name=None, K=None):
     """Save one run as runs/runK_seedS.npz (K = next free run number)."""
     os.makedirs(RUNS_FOLDER, exist_ok=True)
     if name is None:
@@ -172,7 +212,7 @@ def save_run(out, m, x0, p0, seed, labels_only=False, rel=False, name=None):
     E = np.sum(kinetic(p0, m))
     
     np.savez(filename, m=m, seed=seed, E=E, L=L, X_MIN=X_MIN, x0=x0, p0=p0,
-             labels_only=labels_only, relativistic = rel, **out)
+             labels_only=labels_only, relativistic = rel,K=np.nan if K is None else K,**out)
     return filename
 
 
@@ -234,6 +274,7 @@ if __name__ == "__main__":
     #save file under chosen name
     parser.add_argument("--save", metavar="FILE", help="save the run under this name instead of the default")
     parser.add_argument("--rel", action="store_true", help="use relativistic dynamics")
+    parser.add_argument("--K", type=float, default=None, help="set totale kinetic energy to K * Mc^2 (default: leave initialse's energy)")
     args = parser.parse_args()
  
     if args.show:
@@ -249,6 +290,9 @@ if __name__ == "__main__":
     seed = args.seed if args.seed is not None else int(np.random.SeedSequence().entropy % 1_000_000_000)
     rng = np.random.default_rng(seed)
     m, x, p = initialise(rng, m=args.masses)
+    if args.K is not None:
+        velocity, kinetic, collision = pick_physics(args.rel)
+        p = set_energy(p, m, args.K, kinetic)
     print(f"seed = {seed}")
     print(f"masses: m1 = {m[0]:.3f}, m2 = {m[1]:.3f}, m3 = {m[2]:.3f}")
     print(f"start positions: x1 = {x[0]:.3f}, x2 = {x[1]:.3f}, x3 = {x[2]:.3f}\n")
@@ -272,6 +316,6 @@ if __name__ == "__main__":
     print("\ncollisions per label:", {"ABC"[k - 1]: int(c) for k, c in zip(labels, counts)})
  
     filename = save_run(out, m, x0, p0, seed, labels_only=args.labels_only, rel=args.rel,
-                        name=args.save)
+                        name=args.save, K=args.K)
     print(f"\nsaved {filename}")
  

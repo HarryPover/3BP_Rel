@@ -1,6 +1,6 @@
 """Tests for the relativistic collision."""
 import numpy as np
-from ThreeBodyProblem import collision_newton, collision_rel, run, load_run, RUNS_FOLDER
+from ThreeBodyProblem import collision_newton, collision_rel, run, load_run, RUNS_FOLDER, pick_physics, set_energy 
 import os
 
 # Reference values from an independent implementation, relativistic.
@@ -80,6 +80,39 @@ def test_newtonian_limit():
 
 REF_FILE = os.path.join(RUNS_FOLDER, "ref_newton.npz")   # default; change with --ref
 
+def test_set_energy():
+    """Set energy hist K*M extacly, keeps sum p = 0, and agrees with Newton where it should be."""
+    rng = np.random.default_rng(0)
+    for _ in range(50):
+        m = rng.uniform(1, 10, size=3)
+        p = rng.uniform(-5, 5, size=3)
+        p[2] = -(p[0] + p[1])
+        p_before = p.copy()
+        for K in (1e-6, 1e-4, 1.0, 10.0):
+            for rel in (False, True):
+                _, kinetic, _ = pick_physics(rel)
+                q = set_energy(p, m, K, kinetic)
+                # 1. energy is on target
+                np.testing.assert_allclose(kinetic(q, m).sum(), K * m.sum(), rtol=1e-12, atol=0,
+                                           err_msg=f"energy, rel={rel} K={K} m={m} p={p}")
+                # 2. total momentum still zero (relative to the size of the momenta)
+                assert abs(q.sum()) <= 1e-14 * np.abs(q).sum(), f"sum p = {q.sum()}, rel={rel} K={K}"
+                # 3. input array untouched
+                assert np.array_equal(p, p_before), "set_energy modified its input"
+            # 4. Newton: bisection agrees with the closed form s = sqrt(K M / K(1))
+            _, kin_n, _ = pick_physics(False)
+            s_closed = np.sqrt(K * m.sum() / kin_n(p, m).sum())
+            np.testing.assert_allclose(set_energy(p, m, K, kin_n), s_closed * p, rtol=1e-13)
+            # 5. low energy: relativistic s approaches Newtonian s, difference of order K
+            if K <= 1e-4:
+                _, kin_r, _ = pick_physics(True)
+                s_rel = set_energy(p, m, K, kin_r)[0] / p[0]
+                assert 0 < s_rel / s_closed - 1 < 10 * K, f"low-K mismatch {s_rel / s_closed - 1}"
+
+
+
+
+
 def test_newtonian_regression():
     """Replaying a saved run from its start state reproduces it exactly."""
     ref = load_run(REF_FILE)
@@ -95,7 +128,7 @@ def test_newtonian_regression():
 
 TESTS = {"table": test_reference_table, "conservation": test_conservation,
          "swap": test_equal_masses_swap, "limit": test_newtonian_limit,
-         "regression": test_newtonian_regression}
+         "regression": test_newtonian_regression, "set_energy": test_set_energy}
 
 if __name__ == "__main__":
     import argparse

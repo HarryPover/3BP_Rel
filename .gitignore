@@ -8,3 +8,4 @@ results/
 __pycache__/
 *.npz
 !runs/ref_newton.npz
+scratch*.py
