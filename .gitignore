@@ -1,0 +1,10 @@
+prelim_runs/
+runs/
+figures/
+results/
+*.csv
+*.png
+*.gif
+__pycache__/
+*.npz
+!runs/ref_newton.npz
