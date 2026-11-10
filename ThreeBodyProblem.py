@@ -11,7 +11,21 @@ RUNS_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runs")
 
 
 #physics
-def collision(p, m, behind, ahead):
+
+def pick_physics(rel):
+    """Return the functions that are effected by relativistic dynamics.
+    Chosen once per run so newtonian and relativistic effects dont get mixed up."""
+    if rel:
+        velocity = lambda p, m: p / np.hypot(m, p)
+        kinetic = lambda p, m: p**2 / (np.hypot(m, p) + m)
+        collision = collision_rel
+    else:
+        velocity = lambda p, m: p / m
+        kinetic = lambda p, m: 0.5 * p**2 / m
+        collision = collision_newton
+    return velocity, kinetic, collision
+
+def collision_newton(p, m, behind, ahead):
     # Elastic collision in 1D
     #conservation of momentum and energy
 
@@ -23,6 +37,24 @@ def collision(p, m, behind, ahead):
     # Calculate new momenta after collision
     p_new[behind] = (m1-m2)/(M)*p1 + (2*m1)/(M)*p2
     p_new[ahead] = (2*m2)/(M)*p1 + (m2-m1)/(M)*p2 
+    return p_new
+
+def collision_rel(p, m, behind, ahead):
+    """
+    Relativistic 1D elastic collision (c = 1).
+    In the pair's zero-momentum frame (rapidity zeta, tanh zeta = P/E) both momenta reverse,
+    so each rapidity reflects: eta' = 2*zeta - eta. Bystander unchanged.
+    """
+    # Relativistic elastic collision using rapidity.
+    p_new = p.copy()
+    pair = np.array([behind, ahead])
+    E = np.hypot(m[pair], p[pair])
+    eta = np.arcsinh(p[pair] / m[pair])
+    P = np.sum(p[pair])
+    E_pair = np.sum(E)
+    zeta = np.arctanh(P / E_pair)
+    eta_new = 2 * zeta - eta
+    p_new[pair] = m[pair] * np.sinh(eta_new)
     return p_new
 
 
@@ -57,10 +89,11 @@ def time_to_meet(i, x, v):
 
 
 #collision
-def step(x, p, m):
-    #Velocity
-    v = p/m
+def step(x, p, m, velocity, collision):
 
+    v = velocity(p, m)  # Calculate velocities based on momenta and masses
+
+    
     times = np.array([time_to_meet(i, x, v) for i in range(3)])
     i = int(np.argmin(times))  # Index of the next collision
     dt = times[i]
@@ -72,13 +105,13 @@ def step(x, p, m):
     behind, ahead = (i + 1) % 3, (i + 2) % 3
     x_new[behind] = x_new[ahead]  # Ensure particles meet at the same position
     x_c = x_new[behind]  # Collision position
-    p_new = collision(p, m, behind, ahead)  
-
-    return x_new, p_new, dt, x_c, i + 1
+    p_new = collision(p, m, behind, ahead)  # Update momenta after collision
+    
+    return x_new, p_new, dt, x_c, i + 1,  # Return the time step, collision position, and label (1-based index)
 
 
 #RUN
-def run(x, p, m, n_collisions):
+def run(x, p, m, n_collisions, rel=False):
     """
     Run n_collisions steps from the given state.
  
@@ -91,9 +124,11 @@ def run(x, p, m, n_collisions):
     xcs = np.empty(n_collisions)
     xs = np.empty((n_collisions, 3))
     ps = np.empty((n_collisions, 3))
- 
+
+    velocity, kinetic, collision = pick_physics(rel)
+
     for n in range(n_collisions):
-        x, p, dt, x_c, label = step(x, p, m)
+        x, p, dt, x_c, label = step(x, p, m, velocity, collision)
         dts[n], labels[n], xcs[n] = dt, label, x_c
         xs[n], ps[n] = x, p
  
@@ -118,32 +153,52 @@ def print_collisions(out, n_rows=20):
               f" {x1:7.3f} {x2:7.3f} {x3:7.3f}  {p1:7.3f} {p2:7.3f} {p3:7.3f}")
 
 
-def save_run(out, m, x0, p0, seed, labels_only=False):
+
+def save_run(out, m, x0, p0, seed, labels_only=False, rel=False, name=None):
     """Save one run as runs/runK_seedS.npz (K = next free run number)."""
     os.makedirs(RUNS_FOLDER, exist_ok=True)
-    used = [int(f[3:].split("_")[0]) for f in os.listdir(RUNS_FOLDER)
-                if f.startswith("run") and f.endswith(".npz")]
-    k = max(used, default=0) + 1
-    tag = "_labels" if labels_only else ""
-    filename = os.path.join(RUNS_FOLDER, f"run{k}_seed{seed}{tag}.npz")
- 
-    E = 0.5 * np.sum(p0**2 / m)  # Initial energy
+    if name is None:
+        used = [int(f[3:].split("_")[0]) for f in os.listdir(RUNS_FOLDER)
+                    if f.startswith("run") and f[3:].split("_")[0].isdigit() and f.endswith(".npz")]
+        k = max(used, default=0) + 1
+        mode = "_rel" if rel else "_newt"
+        tag = "_labels" if labels_only else ""
+        name = f"run{k}_seed{seed}{mode}{tag}.npz"
+    if not name.endswith(".npz"):
+        name += ".npz"
+    filename = os.path.join(RUNS_FOLDER, name)
+
+    velocity, kinetic, collision = pick_physics(rel)
+    E = np.sum(kinetic(p0, m))
+    
     np.savez(filename, m=m, seed=seed, E=E, L=L, X_MIN=X_MIN, x0=x0, p0=p0,
-             labels_only=labels_only, **out)
+             labels_only=labels_only, relativistic = rel, **out)
     return filename
+
+
+
+def is_relativistic(filename):
+    """Read the stored flag. Old runs have no flag: they were Newtonian."""
+    with np.load(filename) as f:
+        return bool(f["relativistic"]) if "relativistic" in f.files else False
  
-def load_run(filename=None, need_state=False):
+def load_run(filename=None, need_state=False, rel=None):
     """
     Load a run saved by save_run as a dict of arrays (keys as in the module docstring,
     plus "filename"). With no filename, load the newest .npz in runs/ - skipping
-    labels-only runs (names ending _labels.npz) if need_state is True.
+    labels-only runs (names ending _labels.npz) if need_state is True, and keeping only relatistic (rel=True)
+    or only Newtonian (rel=False) runs if rel is given. rel=None means either.
     """
     if filename is None:
         found = glob.glob(os.path.join(RUNS_FOLDER, "*.npz"))
         if need_state:
             found = [f for f in found if not f.endswith("_labels.npz")]
+        if rel is not None:
+            found = [f for f in found if is_relativistic(f) == rel]
         if not found:
-            raise SystemExit(f"No .npz runs in {RUNS_FOLDER} - run ThreeBodyProblem.py first.")
+            which = {None: "", True: "relativistic", False: "Newtonian"}[rel]
+            raise SystemExit(f"No {which}.npz runs in {RUNS_FOLDER} - run ThreeBodyProblem.py first.")
+        
         filename = max(found, key=os.path.getmtime)
         print(f"using newest run: {filename}")
     if not filename.endswith(".npz"):
@@ -152,6 +207,17 @@ def load_run(filename=None, need_state=False):
     with np.load(filename) as f:
         data = {key: f[key] for key in f.files}
     data["filename"] = filename
+    data.setdefault("relativistic", np.array(False))     # old runs: Newtonian
+ 
+    if rel is not None and bool(data["relativistic"]) != rel:
+        raise SystemExit(f"{filename} is {'relativistic' if data['relativistic'] else 'Newtonian'}, "
+                         f"but a {'relativistic' if rel else 'Newtonian'} run was asked for.")
+ 
+    # one header line, so you can check which run a plot came from
+    mode = "relativistic" if data["relativistic"] else "Newtonian"
+    print(f"loaded {os.path.basename(filename)}: {mode}, masses {np.round(data['m'], 3)}, "
+          f"E = {float(data['E']):.4g}, E/M = {float(data['E']) / data['m'].sum():.3g}, "
+          f"{len(data['label']):,} collisions")
     return data
  
  
@@ -167,6 +233,7 @@ if __name__ == "__main__":
     parser.add_argument("--show", metavar="FILE", help="print the first collisions of a saved run")
     #save file under chosen name
     parser.add_argument("--save", metavar="FILE", help="save the run under this name instead of the default")
+    parser.add_argument("--rel", action="store_true", help="use relativistic dynamics")
     args = parser.parse_args()
  
     if args.show:
@@ -192,20 +259,19 @@ if __name__ == "__main__":
         chunks = []
         while sum(len(c) for c in chunks) < args.n:
             size = min(1_000_000, args.n - sum(len(c) for c in chunks))
-            out = run(x, p, m, size)
+            out = run(x, p, m, size, rel=args.rel)
             chunks.append(out["label"])
             x, p = out["x"][-1], out["p"][-1]     # carry the state into the next chunk
             print(f"  {sum(len(c) for c in chunks):,} / {args.n:,}")
         out = {"label": np.concatenate(chunks)}
     else:
-        out = run(x, p, m, args.n)
+        out = run(x, p, m, args.n, rel=args.rel)
         print_collisions(out, 20)
  
     labels, counts = np.unique(out["label"], return_counts=True)
     print("\ncollisions per label:", {"ABC"[k - 1]: int(c) for k, c in zip(labels, counts)})
  
-    filename = save_run(out, m, x0, p0, seed, labels_only=args.labels_only)
-    if args.save:
-        filename = args.save
+    filename = save_run(out, m, x0, p0, seed, labels_only=args.labels_only, rel=args.rel,
+                        name=args.save)
     print(f"\nsaved {filename}")
  

@@ -1,6 +1,6 @@
 """Tests for the relativistic collision."""
 import numpy as np
-from ThreeBodyProblemRelativity import collision_newton, collision_rel, run, load_run, RUNS_FOLDER
+from ThreeBodyProblem import collision_newton, collision_rel, run, load_run, RUNS_FOLDER
 import os
 
 # Reference values from an independent implementation, relativistic.
