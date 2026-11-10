@@ -127,8 +127,8 @@ def time_to_meet(i, x, v):
     return gap / closing_velocity
 
 
-#collision
-def step(x, p, m, velocity, collision):
+
+def step(x, xu, p, m, velocity, collision):
 
     v = velocity(p, m)  # Calculate velocities based on momenta and masses
 
@@ -145,8 +145,15 @@ def step(x, p, m, velocity, collision):
     x_new[behind] = x_new[ahead]  # Ensure particles meet at the same position
     x_c = x_new[behind]  # Collision position
     p_new = collision(p, m, behind, ahead)  # Update momenta after collision
+
+     # unwrapped positions: bookkeeping only, momenta untouched
+    xu_new = xu + v * dt                  # same drift, no mod L
+    if behind == 2 and ahead == 0:        # label B, across the seam
+        xu_new[2] = xu_new[0] + L         # bead 3 sits on bead 1's image
+    else:
+        xu_new[behind] = xu_new[ahead]    # snap, like the wrapped version
     
-    return x_new, p_new, dt, x_c, i + 1,  # Return the time step, collision position, and label (1-based index)
+    return x_new,xu_new, p_new, dt, x_c, i + 1,  # Return the time step, collision position, and label (1-based index)
 
 
 #RUN
@@ -157,21 +164,32 @@ def run(x, p, m, n_collisions, rel=False):
     Returns a dict of arrays, one row per collision (state recorded AFTER it):
       t (cumulative time), dt, k, x_c, section, x (n, 3), p (n, 3)
     """
-    
+    xu = x.copy()
+
     dts = np.empty(n_collisions)
     labels = np.empty(n_collisions, dtype= np.int8) 
     xcs = np.empty(n_collisions)
     xs = np.empty((n_collisions, 3))
     ps = np.empty((n_collisions, 3))
+    xus = np.empty((n_collisions, 3))
+    X_rest = np.empty(n_collisions)
+    X_moller = np.empty(n_collisions)
 
     velocity, kinetic, collision = pick_physics(rel)
+    X_rest = np.empty(n_collisions)
 
     for n in range(n_collisions):
-        x, p, dt, x_c, label = step(x, p, m, velocity, collision)
+        x, xu, p, dt, x_c, label = step(x, xu, p, m, velocity, collision)
+        
         dts[n], labels[n], xcs[n] = dt, label, x_c
         xs[n], ps[n] = x, p
+        xus[n] = xu
+        X_rest[n] = np.sum(m * xu) / np.sum(m)  
+        E = np.hypot(m,p)
+        X_moller[n] = np.sum(E * xu) / np.sum(E) if rel else np.nan
  
-    return {"dt": dts, "t": np.cumsum(dts), "label": labels, "x_c": xcs, "x": xs, "p": ps}
+    return {"dt": dts, "t": np.cumsum(dts), "label": labels, "x_c": xcs, "x": xs, "p": ps,
+     "xu": xus, "X_rest": X_rest, "X_moller": X_moller}
  
 
 PAIR_OF = {1: "2-3", 2: "1-3", 3: "1-2"}
