@@ -25,7 +25,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
-from ThreeBodyProblem import L, X_MIN, load_run   # same ring geometry and file format
+from ThreeBodyProblem import L, X_MIN, load_run, pick_physics   # same ring geometry and file format
 
 
 COLOURS = ["#2a78d6", "#eb6834", "#1baf7a"]      # m1, m2, m3 / labels A, B, C
@@ -38,11 +38,15 @@ parser.add_argument("filename", nargs="?",
 parser.add_argument("--bins", type=int, default=40)
 parser.add_argument("--save", action="store_true",
                     help="write each figure as PDF and PNG to figures/<run name>/")
+parser.add_argument("--rel", action="store_true", help="load only a relativistic run (default: any)")
+parser.add_argument("--newt", action="store_true", help="load only a Newtonian run (default: any)")
+
 args = parser.parse_args()
 
 
 # --- load the run -------------------------------------------------------------------
-data = load_run(args.filename, need_state=True)
+want = True if args.rel else False if args.newt else None
+data = load_run(args.filename, need_state=True, rel=want)
 if data["labels_only"]:
     raise SystemExit("This run kept only the labels - use compression_test.py, "
                      "or make a normal run for the figures.")
@@ -54,6 +58,15 @@ x = data["x"]
 p = data["p"]                        # just after each collision; row n lasts for dt[n+1]
 w = dt[1:]                           # time weight for rows 0 .. N-2
 
+#simulation side always uses the runs own physics; theory curves are Newtonian
+rel = bool(data["relativistic"])   
+velocity, kinetic, _ = pick_physics(rel)
+K_over_Mc2 = E / m.sum()    # c = 1: only meaningful for relativistic runs
+if rel and K_over_Mc2 > 1e-3:
+    print(f"\nWARNING: relativistic run at K/Mc^2 = {K_over_Mc2:.3g}. Every theory curve below is\n"
+          "the NEWTONIAN prediction. Departures from it are the relativistic effect.\n"
+          "p_max is Newtonian too, so p / p_max can exceed 1 (those counts fall off the plot).")
+ 
 M = m.sum()
 p_max = np.sqrt(2 * E * m * (M - m) / M)         # largest momentum each particle can have
 
@@ -99,7 +112,7 @@ xc_theory = [positions_from_gaps(g, zero)[:, 1],             # A: m2 meets m3 (b
 
 
 # --- printout -------------------------------------------------------------------------
-K = p[:-1] ** 2 / (2 * m) / E                    # kinetic energy fractions
+K = kinetic(p[:-1], m) / E                  # kinetic energy fractions
 K_avg = np.average(K, axis=0, weights=w)
 K_theory = (M - m) / (2 * M)
 
@@ -204,7 +217,7 @@ figures["fig4_collision_positions"] = fig
 # run, find which collision interval each falls in, and move the particles there.
 times = rng.uniform(t[0], t[-1], 200_000)
 n = np.searchsorted(t, times, side="right") - 1
-x_samples = X_MIN + (x[n] + p[n] / m * (times - t[n])[:, None] - X_MIN) % L
+x_samples = X_MIN + (x[n] + velocity(p[n], m) * (times - t[n])[:, None] - X_MIN) % L
 
 fig, ax = plt.subplots()
 edges = np.linspace(X_MIN, X_MIN + L, args.bins + 1)
