@@ -1,6 +1,6 @@
 """Tests for the relativistic collision."""
 import numpy as np
-from ThreeBodyProblem import collision_newton, collision_rel, run, load_run, RUNS_FOLDER, pick_physics, set_energy 
+from ThreeBodyProblem import collision_newton, collision_rel, run, load_run, RUNS_FOLDER, pick_physics, set_energy, microcanonical_shares
 import os
 
 # Reference values from an independent implementation, relativistic.
@@ -126,9 +126,37 @@ def test_newtonian_regression():
     assert np.array_equal(out["x"], ref["x"]), "positions changed"
 
 
+def test_microcanonical():
+    """microcanonical shares: Newtonian closed form, low-K limit, high-K limit, convergence."""
+
+    for m in (np.array([1., 2.,3.])), np.array([2.3,5.6,9.5]):
+        M = m.sum()
+        newton = (M - m) / (2 * M)
+        #1. Newtonian closed form
+        s, pv = microcanonical_shares(m, 1.0, rel=False)
+        np.testing.assert_allclose(s, newton, atol=1e-5)
+        np.testing.assert_allclose(pv, newton, atol=1e-5)
+        #2. relativistic low-K limit: should approach Newtonian
+        s, _ = microcanonical_shares(m, 1e-4, rel=True)
+        np.testing.assert_allclose(s, newton, rtol=1e-3)
+        #3. relativistic high-K limit: 1/3 + (M/3 - m_i)/(K M)
+        K = 100
+        s, pv = microcanonical_shares(m, K, rel=True)
+        np.testing.assert_allclose(s, 1/3 + (M/3 - m)/(K*M), atol=2e-3)
+        np.testing.assert_allclose(pv, 1/3, atol=1e-3)
+        #4. convergence
+        a, _ = microcanonical_shares(m, K, rel=True, n_points=5_000)
+        b, _ = microcanonical_shares(m, K, rel=True, n_points=10_000)
+        np.testing.assert_allclose(a, b, atol=1e-5) # central-difference ds: error ~1/n^2, ~2e-6 at K=100 with 5k points; sim errors >= 1e-4
+
+
+
+
 TESTS = {"table": test_reference_table, "conservation": test_conservation,
          "swap": test_equal_masses_swap, "limit": test_newtonian_limit,
-         "regression": test_newtonian_regression, "set_energy": test_set_energy}
+         "microcanonical": test_microcanonical, "regression": test_newtonian_regression,
+         "set_energy": test_set_energy}
+
 
 if __name__ == "__main__":
     import argparse

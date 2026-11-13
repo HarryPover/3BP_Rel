@@ -14,7 +14,7 @@ import argparse
 
 import numpy as np
 
-from ThreeBodyProblem import initialise, run, pick_physics, set_energy, santalo_tau
+from ThreeBodyProblem import initialise, run, pick_physics, set_energy, santalo_tau, microcanonical_shares
 
 import os
 
@@ -46,11 +46,17 @@ saved = {
     "dt_ratios": [],
     "var_xs": [],
     "block_errors": [],
+    "mc_shares": [],
+    "mc_pv_shares": []
 }
 
 
 
 for K in (args.K or [None]):
+
+    for k in (args.K or [None]):
+                mc_K, mc_pv = microcanonical_shares(m, k, rel=args.rel) if K is not None else (newt_theory, newt_theory)
+                
     for n_collisions in args.n:
         averages, block_errors, fracs, dt_ratios, var_xs = [], [], [], [], []
         pv_shares = []
@@ -91,18 +97,19 @@ for K in (args.K or [None]):
 
         averages, block_errors, fracs, dt_ratios, var_xs = np.array(averages), np.array(block_errors), np.array(fracs), np.array(dt_ratios), np.array(var_xs)
         pv_shares = np.array(pv_shares)
-        
+
+                
         print(f"\n{n_collisions:,} collisions per run, {args.runs} runs, masses {m}, K={K}")
         if args.rel and K is not None and K > 1e-3:
             print("  WARNING: relativistic, K > 1e-3: 'Newtonian' values are for comparison only")
         print("  spread across runs:      ", averages.std(axis=0, ddof=1).round(4))
         print("  typical block error:     ", block_errors.mean(axis=0).round(4))
-        print("  mean of runs:            ", averages.mean(axis=0).round(4),
-              "+/-", (averages.std(axis=0, ddof=1) / np.sqrt(args.runs)).round(4),
-              "  Newtonian:", newt_theory.round(4))
-        print("  <p v> shares: ", pv_shares.mean(axis=0).round(4),
-                "+/-", (pv_shares.std(axis=0, ddof=1) / np.sqrt(args.runs)).round(4),
-                "  Newtonian:", newt_theory.round(4))
+        print("  energy shares:           ", averages.mean(axis=0).round(4),
+            "+/-", (averages.std(axis=0, ddof=1) / np.sqrt(args.runs)).round(4),
+            "  microcanonical:", np.round(mc_K, 4), "  Newtonian:", newt_theory.round(4))
+        print("  <p v> shares:            ", pv_shares.mean(axis=0).round(4),
+            "+/-", (pv_shares.std(axis=0, ddof=1) / np.sqrt(args.runs)).round(4),
+            "  microcanonical:", np.round(mc_pv, 4), "  Newtonian:", newt_theory.round(4))
         print("  collision fractions:     ", fracs.mean(axis=0).round(4),
               "+/-", (fracs.std(axis=0, ddof=1) / np.sqrt(args.runs)).round(4),
               "  Newtonian:", (wall / perimeter).round(4))
@@ -120,6 +127,8 @@ for K in (args.K or [None]):
         saved["dt_ratios"].append(dt_ratios)
         saved["var_xs"].append(var_xs)
         saved["block_errors"].append(block_errors)
+        saved["mc_shares"].append(mc_K)
+        saved["mc_pv_shares"].append(mc_pv)
 
 
 

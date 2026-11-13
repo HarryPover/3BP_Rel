@@ -93,6 +93,33 @@ def set_energy(p, m, K, kinetic):
 
     return s * p
 
+def microcanonical_shares(m, K, rel, n_points=5_000):
+    """Time averaged <K_i> / E and < p_i v_i> shares predicted by the microcanonical measure
+     on the momentum curve {sum kinetic = K * M, sum p = 0} (ergodic hypothesis). """
+
+    velocity, kinetic, _ = pick_physics(rel)
+
+    theta = np.linspace(0, 2*np.pi, n_points, endpoint=False)
+    #2 orthonormal vectors spanning the plane sum p = 0
+    e1 = np.array([1, -1, 0]) / np.sqrt(2)
+    e2 = np.array([1, 1, -2]) / np.sqrt(6)
+
+    directions = np.outer(np.cos(theta), e1) + np.outer(np.sin(theta), e2)
+
+    p = np.array([set_energy(d, m, K, kinetic) for d in directions])
+    ds = np.linalg.norm(np.roll(p, -1, axis=0) - np.roll(p, 1, axis=0), axis=1) / 2  #arc length of each segment
+    
+    v = velocity(p, m)
+    w = ds / np.linalg.norm(np.cross(v, np.ones(3)), axis = 1)  #weights for averaging along the curve
+
+    k = kinetic(p, m) 
+    pv = p * v
+
+    K_shares = (w[:, None] * k).sum(axis=0) / (w * k.sum(axis=1)).sum()
+    pv_avg = (w[:, None] * pv).sum(axis=0)
+    pv_shares = pv_avg / pv_avg.sum()
+
+    return K_shares, pv_shares
 
     
 
