@@ -46,17 +46,16 @@ saved = {
     "dt_ratios": [],
     "var_xs": [],
     "block_errors": [],
-    "mc_shares": [],
-    "mc_pv_shares": []
+    "mc_K": [],
+    "mc_pv": [],
 }
 
 
 
 for K in (args.K or [None]):
 
-    for k in (args.K or [None]):
-                mc_K, mc_pv = microcanonical_shares(m, k, rel=args.rel) if K is not None else (newt_theory, newt_theory)
-                
+    mc_K, mc_pv = microcanonical_shares(m, K, rel=args.rel) if K is not None else (newt_theory, newt_theory)
+            
     for n_collisions in args.n:
         averages, block_errors, fracs, dt_ratios, var_xs = [], [], [], [], []
         pv_shares = []
@@ -127,8 +126,8 @@ for K in (args.K or [None]):
         saved["dt_ratios"].append(dt_ratios)
         saved["var_xs"].append(var_xs)
         saved["block_errors"].append(block_errors)
-        saved["mc_shares"].append(mc_K)
-        saved["mc_pv_shares"].append(mc_pv)
+        saved["mc_K"].append(mc_K)
+        saved["mc_pv"].append(mc_pv)
 
 
 
