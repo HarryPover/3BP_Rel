@@ -25,7 +25,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
-from ThreeBodyProblem import L, X_MIN, load_run, pick_physics   # same ring geometry and file format
+from ThreeBodyProblem import L, X_MIN, load_run, pick_physics, santalo_tau   # same ring geometry and file format
 
 
 COLOURS = ["#2a78d6", "#eb6834", "#1baf7a"]      # m1, m2, m3 / labels A, B, C
@@ -70,14 +70,7 @@ if rel and K_over_Mc2 > 1e-3:
 M = m.sum()
 p_max = np.sqrt(2 * E * m * (M - m) / M)         # largest momentum each particle can have
 
-
-# --- the triangle (mass-weighted configuration space) ---------------------------------
-# wall k = "mass k sits out". Its length sets how often label k happens.
-wall = L * np.sqrt(m * (M - m) / M)
-perimeter = wall.sum()
-s = perimeter / 2
-area = np.sqrt(s * np.prod(s - wall))                       # Heron's formula
-tau = np.pi * area / (perimeter * np.sqrt(2 * E))           # Santalo mean free time
+tau, wall, perimeter = santalo_tau(M, m, E)
 
 
 # --- uniform-over-the-triangle theory for positions ------------------------------------

@@ -126,6 +126,20 @@ def time_to_meet(i, x, v):
         return np.inf
     return gap / closing_velocity
 
+#function to clean up (tau)
+def santalo_tau(M, m,E):
+    """Newtonian mean free time between collisions (Santalo 1976)"""
+    
+    # --- the triangle (mass-weighted configuration space) ---------------------------------
+    # wall k = "mass k sits out". Its length sets how often label k happens.
+    wall = L * np.sqrt(m * (M - m) / M)
+    perimeter = wall.sum()
+    s = perimeter / 2
+    area = np.sqrt(s * np.prod(s - wall))                       # Heron's formula
+    tau = np.pi * area / (perimeter * np.sqrt(2 * E))          # Santalo mean free time
+    return tau, wall, perimeter          # Santalo mean free time
+    
+
 
 
 def step(x, xu, p, m, velocity, collision):
